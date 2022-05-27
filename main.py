@@ -7,6 +7,7 @@ from sklearn.naive_bayes import MultinomialNB
 import joblib
 import re
 import unicodedata
+import sqlite3
 
 app = Flask(__name__)
 
@@ -22,12 +23,36 @@ def root():
     resp['status'] = "funcionando"
     return jsonify( resp ), 200
 
+@app.route("/avaliacoes/",  methods=['GET', 'POST'])
+def avaliacoes():
+    resp = {}
+    ret = []
+    sqliteConnection = sqlite3.connect('modelos/previsoes.db', timeout=20)
+    cursor = sqliteConnection.cursor()
+    sqlite_select_query = """SELECT * from tab_previsoes"""
+    cursor.execute(sqlite_select_query)
+
+    for linha in cursor.fetchall():
+        dicio = {"ID_Previsao" : str(linha[0]), "Filme" : str(linha[1]), "Comentario" : str(linha[2]), "Avaliacao" : str(linha[3]) }
+        ret.append(dicio)
+    cursor.close()
+    sqliteConnection.close()
+
+    return jsonify({'data':ret}), 200
+
+
 @app.route("/predict/",  methods=['GET', 'POST'])
 def predict():
 
     # capturar o json enviado
     dados = request.get_json()
     texto_usuario = dados['avaliacao']
+    movie = dados['movie']
+    if texto_usuario == "":
+      resp = {}
+      resp['avaliacao'] = "Nada a avaliar"
+      return jsonify( resp ), 200
+
 
     # tratamento do texto recebido
     frase = word_tokenize(texto_usuario.lower())
@@ -42,6 +67,15 @@ def predict():
     dict_saida = {0:"negativa 😞", 1:"positiva 😃"}
     Predicao = dict_saida[saida[0]]
     
+    # Gravar Filme, Comentário e avaliação
+    sqliteConnection = sqlite3.connect('modelos/previsoes.db')
+    cursor = sqliteConnection.cursor()
+    sqlite_insert_query = " INSERT INTO tab_previsoes (Movie, Comentario, Avaliacao) VALUES "  + "('"+movie+"'," +"'"+texto_usuario+"',"+"'"+str(saida[0])+"')"
+    cursor.execute(sqlite_insert_query)
+    sqliteConnection.commit()
+    cursor.close()
+    sqliteConnection.close()
+
     # devolve o retorno em formato json para o processo frontend solicitante
     resp = {}
     resp['avaliacao'] = dict_saida[saida[0]]
